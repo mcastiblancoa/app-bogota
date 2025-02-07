@@ -15,6 +15,14 @@ const MapComponent = () => {
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [error, setError] = useState(""); // Estado para manejar el mensaje de error
 
+  // Límites geográficos de Bogotá
+  const BOGOTA_BOUNDS = {
+    minLat: 4.48,
+    maxLat: 4.83,
+    minLng: -74.25,
+    maxLng: -73.99,
+  };
+
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -23,12 +31,12 @@ const MapComponent = () => {
         },
         (err) => {
           console.error("Error al obtener la ubicación:", err);
-          setUserPosition([4.7109886, -74.072092]);
+          setUserPosition([4.7109886, -74.072092]); // Ubicación por defecto en Bogotá
         }
       );
     } else {
       console.error("Geolocalización no soportada por el navegador.");
-      setUserPosition([4.7109886, -74.072092]);
+      setUserPosition([4.7109886, -74.072092]); // Ubicación por defecto en Bogotá
     }
   }, []);
 
@@ -38,33 +46,45 @@ const MapComponent = () => {
         const querySnapshot = await getDocs(collection(db, "incidents"));
         const now = new Date();
         const validMarkers = [];
-
+  
         for (const docSnap of querySnapshot.docs) {
           const data = docSnap.data();
-          const timestamp = data.timestamp?.toDate();
+          const timestamp = data.timestamp?.toDate(); // Convertir Firebase Timestamp a Date
           const hoursDiff = (now - timestamp) / (1000 * 60 * 60);
-
+  
           if (hoursDiff <= 8) {
-            validMarkers.push({ id: docSnap.id, ...data });
+            validMarkers.push({ id: docSnap.id, ...data, timestamp }); // Asegúrate de incluir el timestamp convertido
           } else {
             await deleteDoc(doc(db, "incidents", docSnap.id)); // Elimina incidentes viejos
           }
         }
-
+  
         setMarkers(validMarkers);
       } catch (error) {
         console.error("Error al obtener los incidentes:", error);
       }
     };
-
+  
     fetchMarkers();
   }, []);
-
   const MapClickHandler = () => {
     useMapEvents({
       click: (e) => {
-        setSelectedPosition(e.latlng);
-        setShowForm(true);
+        const { lat, lng } = e.latlng;
+
+        // Validar si la posición seleccionada está dentro de los límites de Bogotá
+        if (
+          lat >= BOGOTA_BOUNDS.minLat &&
+          lat <= BOGOTA_BOUNDS.maxLat &&
+          lng >= BOGOTA_BOUNDS.minLng &&
+          lng <= BOGOTA_BOUNDS.maxLng
+        ) {
+          setSelectedPosition(e.latlng);
+          setShowForm(true);
+          setError(""); // Limpiar mensaje de error si existe
+        } else {
+          setError("Solo puedes agregar incidentes dentro del área de Bogotá.");
+        }
       },
     });
     return null;
@@ -118,6 +138,13 @@ const MapComponent = () => {
     }
   };
 
+  // Función para formatear la fecha
+  const formatDate = (date) => {
+    if (!date) return "Fecha no disponible";
+    const options = { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" };
+    return new Date(date).toLocaleDateString("es-ES", options);
+  };
+
   if (!userPosition) {
     return <div>Cargando mapa...</div>;
   }
@@ -140,11 +167,28 @@ const MapComponent = () => {
             <Marker key={marker.id} position={marker.position} icon={icon}>
               <Popup>
                 <strong>Tipo:</strong> {marker.type} <br />
-                <strong>Descripción:</strong> {marker.description}
+                <strong>Descripción:</strong> {marker.description} <br />
+                <strong>Fecha:</strong> {formatDate(marker.timestamp)}
               </Popup>
             </Marker>
           );
         })}
+        {/* Marker para la posición del usuario */}
+        {userPosition && (
+          <Marker
+            position={userPosition}
+            icon={L.icon({
+              iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png",
+              iconSize: [25, 41],
+              iconAnchor: [12, 41],
+              popupAnchor: [1, -34],
+            })}
+          >
+            <Popup>
+              <strong>Tu ubicación actual</strong>
+            </Popup>
+          </Marker>
+        )}
         <MapClickHandler />
       </MapContainer>
 
